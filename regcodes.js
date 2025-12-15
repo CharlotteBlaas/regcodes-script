@@ -1,118 +1,139 @@
+<script>
 (function () {
-  function log() { try { console.log.apply(console, arguments); } catch (e) {} }
-  function warn() { try { console.warn.apply(console, arguments); } catch (e) {} }
+  try {
+    // Elke keer opnieuw mogen draaien (voor History Change)
+    var MAX_TRIES = 80;
+    var INTERVAL = 250;
+    var tries = 0;
 
-  log('[RegCodes] extern script gestart');
-
-  function getValues() {
-    var container = document.getElementById('registratie-raw-data');
-    if (!container) return null;
-
-    var lis = container.querySelectorAll('li');
-    if (!lis.length) return [];
-
-    return Array.from(lis)
-      .map(function (li) {
-        return (li.getAttribute('data-code') || li.textContent || '').trim();
-      })
-      .filter(function (v) {
-        if (!v) return false;
-        if (v.indexOf('{User.Registratiecode') === 0) return false;
-        return true;
-      });
-  }
-
-  function findTbody() {
-    return (
-      document.querySelector('#registratie-tabel tbody') ||
-      document.querySelector('table.hvdz-code-table tbody')
-    );
-  }
-
-  function buildTable() {
-    var values = getValues();
-    if (values === null || !values.length) return false;
-
-    var tableBody = findTbody();
-    if (!tableBody) return false;
-
-    tableBody.innerHTML = '';
-
-    values.forEach(function (raw) {
-      var parts = raw.split(';');
-      while (parts.length < 3) parts.push('');
-
-      var code = parts[0].trim();
-      var status = parts[1].trim();
-      var email = parts[2].trim();
-      if (!code) return;
-
-      var shareUrl =
-        'https://mdw-hvdz.hartstichting.nl/nl/?unique_code=' + encodeURIComponent(code);
-
-      var tr = document.createElement('tr');
-
-      var tdCode = document.createElement('td');
-      tdCode.className = 'hvdz-code-cell';
-
-      var codeSpan = document.createElement('span');
-      codeSpan.className = 'hvdz-code';
-      codeSpan.textContent = code;
-
-      var btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'hvdz-copy-btn';
-      btn.textContent = 'Kopieer link';
-      btn.setAttribute('data-link', shareUrl);
-
-      tdCode.appendChild(codeSpan);
-      tdCode.appendChild(btn);
-      tr.appendChild(tdCode);
-
-      var tdStatus = document.createElement('td');
-      tdStatus.className = 'hvdz-status';
-      tdStatus.textContent = status || '';
-      tr.appendChild(tdStatus);
-
-      var tdEmail = document.createElement('td');
-      if (email) {
-        var mail = document.createElement('a');
-        mail.href = 'mailto:' + encodeURIComponent(email);
-        mail.textContent = email;
-        tdEmail.appendChild(mail);
-      }
-      tr.appendChild(tdEmail);
-
-      tableBody.appendChild(tr);
-    });
-
-    if (!tableBody.dataset.copyHandlerAttached) {
-      tableBody.addEventListener('click', function (e) {
-        var btn = e.target.closest('.hvdz-copy-btn');
-        if (!btn) return;
-
-        var link = btn.getAttribute('data-link');
-        if (!link) return;
-
-        navigator.clipboard?.writeText(link).catch(function () {});
-        btn.textContent = 'Gekopieerd!';
-        setTimeout(function () {
-          btn.textContent = 'Kopieer link';
-        }, 1500);
-      });
-      tableBody.dataset.copyHandlerAttached = '1';
+    function stripHtml(input){
+      var div = document.createElement('div');
+      div.innerHTML = String(input || '');
+      return (div.textContent || div.innerText || '').trim();
     }
 
-    log('[RegCodes] ✅ tabel opgebouwd:', tableBody.querySelectorAll('tr').length);
-    return true;
-  }
+    function getRows(){
+      var container = document.getElementById('registratie-raw-data');
+      if (!container) return null;
 
-  var tries = 0;
-  var maxTries = 40;
-  (function tick() {
-    tries++;
-    if (buildTable()) return;
-    if (tries < maxTries) setTimeout(tick, 250);
-    else warn('[RegCodes] gestopt na retries');
-  })();
+      var lis = Array.from(container.querySelectorAll('li'));
+      if (!lis.length) return [];
+
+      return lis
+        .map(function(li){ return stripHtml(li.textContent || ''); })
+        .map(function(s){ return s.replace(/\u00A0/g,' ').replace(/\s+/g,' ').trim(); })
+        .filter(Boolean)
+        .filter(function(v){ return v.indexOf('{User.Registratiecode') !== 0; });
+    }
+
+    function makeShareUrl(code){
+      return 'https://mdw-hvdz.hartstichting.nl/nl/?unique_code=' + encodeURIComponent(code);
+    }
+
+    function isUsed(status){
+      return (status || '').toLowerCase().indexOf('gebruikt') !== -1;
+    }
+
+    function build(){
+      var tbody = document.querySelector('#registratie-tabel tbody');
+      if (!tbody) return false;
+
+      var rows = getRows();
+      if (!rows) return false;
+      if (!rows.length) return false;
+
+      tbody.innerHTML = '';
+
+      rows.forEach(function(raw){
+        var parts = raw.split(';').map(function(p){ return (p || '').trim(); });
+        while(parts.length < 3) parts.push('');
+
+        var code = parts[0];
+        var status = parts[1] || 'Beschikbaar';
+        var email = parts[2] || '';
+
+        if (!code) return;
+
+        var url = makeShareUrl(code);
+        var used = isUsed(status);
+
+        var tr = document.createElement('tr');
+
+        // Acties
+        var tdA = document.createElement('td');
+        tdA.innerHTML =
+          '<div class="hs-actions">' +
+            '<a class="hs-icon-btn hs-mail-btn" ' + (used ? '' : 'href="mailto:' + encodeURIComponent(email) +
+              '?subject=' + encodeURIComponent('Uitnodiging benefits platform') +
+              '&body=' + encodeURIComponent('Gebruik deze persoonlijke link:\n\n' + url) + '"') +
+            ' title="Mail openen" ' + (used ? 'aria-disabled="true"' : '') + '>' +
+              '✉️' +
+            '</a>' +
+            '<button class="hs-icon-btn hs-copy-btn" type="button" data-link="' + url + '" ' + (used ? 'disabled' : '') + ' title="Kopieer link">📋</button>' +
+          '</div>';
+
+        // Code
+        var tdC = document.createElement('td');
+        tdC.innerHTML = '<span class="hvdz-code">' + code + '</span>';
+
+        // Status
+        var tdS = document.createElement('td');
+        tdS.textContent = status;
+
+        // Email (alleen als gevuld)
+        var tdE = document.createElement('td');
+        tdE.textContent = email;
+
+        tr.appendChild(tdA);
+        tr.appendChild(tdC);
+        tr.appendChild(tdS);
+        tr.appendChild(tdE);
+        tbody.appendChild(tr);
+      });
+
+      // 1x click handler (delegation)
+      if (!tbody.dataset.copyHandlerAttached) {
+        tbody.addEventListener('click', function(e){
+          var btn = e.target.closest('.hs-copy-btn');
+          if (!btn || btn.disabled) return;
+          var link = btn.getAttribute('data-link');
+          if (!link) return;
+
+          function done(){
+            var old = btn.textContent;
+            btn.textContent = '✅';
+            setTimeout(function(){ btn.textContent = old; }, 900);
+          }
+
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(link).then(done).catch(done);
+          } else {
+            var t = document.createElement('textarea');
+            t.value = link;
+            t.style.position = 'fixed';
+            t.style.opacity = '0';
+            document.body.appendChild(t);
+            t.select();
+            try { document.execCommand('copy'); } catch(e2) {}
+            document.body.removeChild(t);
+            done();
+          }
+        });
+        tbody.dataset.copyHandlerAttached = '1';
+      }
+
+      return true;
+    }
+
+    function tick(){
+      tries++;
+      if (build()) return;
+      if (tries < MAX_TRIES) setTimeout(tick, INTERVAL);
+    }
+
+    tick();
+  } catch (err) {
+    console.error('[RegCodes] fatal error:', err);
+  }
 })();
+</script>
