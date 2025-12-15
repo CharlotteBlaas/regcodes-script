@@ -2,40 +2,47 @@
   function log() { try { console.log.apply(console, arguments); } catch (e) {} }
   function warn() { try { console.warn.apply(console, arguments); } catch (e) {} }
 
-  log('[RegCodes] extern script gestart');
+  var STATE = {
+    builtForSignature: null,
+    observer: null,
+    attachTries: 0
+  };
+
+  function qs(sel, root) { return (root || document).querySelector(sel); }
+  function qsa(sel, root) { return Array.from((root || document).querySelectorAll(sel)); }
 
   function getValues() {
     var container = document.getElementById('registratie-raw-data');
     if (!container) return null;
 
-    var lis = container.querySelectorAll('li');
+    var lis = qsa('li', container);
     if (!lis.length) return [];
 
-    return Array.from(lis)
+    return lis
       .map(function (li) {
         return (li.getAttribute('data-code') || li.textContent || '').trim();
       })
       .filter(function (v) {
         if (!v) return false;
-        if (v.indexOf('{User.Registratiecode') === 0) return false;
+        if (v.indexOf('{User.Registratiecode') === 0) return false; // placeholders filter
         return true;
       });
   }
 
   function findTbody() {
-    return (
-      document.querySelector('#registratie-tabel tbody') ||
-      document.querySelector('table.hvdz-code-table tbody')
-    );
+    return qs('#registratie-tabel tbody') || qs('table.hvdz-code-table tbody');
+  }
+
+  function makeShareUrl(code) {
+    return 'https://mdw-hvdz.hartstichting.nl/nl/?unique_code=' + encodeURIComponent(code);
   }
 
   function buildMailto(email, shareUrl) {
-    // Pas deze tekst gerust aan naar jullie tone-of-voice
     var subject = 'Uitnodiging Hartstichting Voordeelplatform';
     var body = [
       'Beste collega,',
       '',
-      'Je bent uitgenodigd om gebruik te maken van het Hartstichting voordeelplatform.',
+      'Je bent uitgenodigd om gebruik te maken van het Hartstichting Voordeelplatform.',
       '',
       'Gebruik onderstaande persoonlijke link om je te registreren:',
       shareUrl,
@@ -50,14 +57,25 @@
     );
   }
 
+  function signature(values) {
+    // voorkomt onnodig opnieuw bouwen
+    return values.join('||');
+  }
+
   function buildTable() {
     var values = getValues();
-    if (values === null || !values.length) return false;
+    if (values === null) return false;   // raw container bestaat nog niet
+    if (!values.length) return false;    // nog geen data (of placeholders)
 
-    var tableBody = findTbody();
-    if (!tableBody) return false;
+    var tbody = findTbody();
+    if (!tbody) return false;
 
-    tableBody.innerHTML = '';
+    var sig = signature(values);
+    if (STATE.builtForSignature === sig && tbody.querySelectorAll('tr').length) {
+      return true; // al gebouwd voor dezelfde data
+    }
+
+    tbody.innerHTML = '';
 
     values.forEach(function (raw) {
       var parts = raw.split(';');
@@ -68,68 +86,66 @@
       var email = (parts[2] || '').trim();
       if (!code) return;
 
-      var shareUrl =
-        'https://mdw-hvdz.hartstichting.nl/nl/?unique_code=' + encodeURIComponent(code);
+      var shareUrl = makeShareUrl(code);
 
       var tr = document.createElement('tr');
 
-      // Kolom 1: code + kopieerknop
-      var tdCode = document.createElement('td');
-      tdCode.className = 'hvdz-code-cell';
+      // kolom 1
+      var td1 = document.createElement('td');
+      td1.className = 'hvdz-code-cell';
 
       var codeSpan = document.createElement('span');
       codeSpan.className = 'hvdz-code';
       codeSpan.textContent = code;
 
-      var btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'hvdz-copy-btn';
-      btn.textContent = 'Kopieer link';
-      btn.setAttribute('data-link', shareUrl);
+      var copyBtn = document.createElement('button');
+      copyBtn.type = 'button';
+      copyBtn.className = 'hvdz-copy-btn';
+      copyBtn.textContent = 'Kopieer link';
+      copyBtn.setAttribute('data-link', shareUrl);
 
-      tdCode.appendChild(codeSpan);
-      tdCode.appendChild(btn);
-      tr.appendChild(tdCode);
+      td1.appendChild(codeSpan);
+      td1.appendChild(copyBtn);
+      tr.appendChild(td1);
 
-      // Kolom 2: status
-      var tdStatus = document.createElement('td');
-      tdStatus.className = 'hvdz-status';
-      tdStatus.textContent = status || '';
-      tr.appendChild(tdStatus);
+      // kolom 2
+      var td2 = document.createElement('td');
+      td2.className = 'hvdz-status';
+      td2.textContent = status || '';
+      tr.appendChild(td2);
 
-      // Kolom 3: e-mail + mailknop
-      var tdEmail = document.createElement('td');
+      // kolom 3 (met spacing)
+      var td3 = document.createElement('td');
 
       if (email) {
         var wrap = document.createElement('div');
-        wrap.className = 'hvdz-actions';
+        wrap.style.display = 'flex';
+        wrap.style.flexWrap = 'wrap';
+        wrap.style.gap = '8px';
+        wrap.style.alignItems = 'center';
 
-        // E-mail link
-        var mailLink = document.createElement('a');
-        mailLink.className = 'hvdz-email';
-        mailLink.href = 'mailto:' + encodeURIComponent(email);
-        mailLink.textContent = email;
+        var emailLink = document.createElement('a');
+        emailLink.className = 'hs-email';
+        emailLink.href = 'mailto:' + encodeURIComponent(email);
+        emailLink.textContent = email;
 
-        // Mail-knop met voorgeschreven tekst + URL
         var mailBtn = document.createElement('a');
-        mailBtn.className = 'hvdz-mail-btn';
+        mailBtn.className = 'hs-mail-btn';
         mailBtn.href = buildMailto(email, shareUrl);
         mailBtn.textContent = 'Mail openen';
 
-        wrap.appendChild(mailLink);
+        wrap.appendChild(emailLink);
         wrap.appendChild(mailBtn);
-        tdEmail.appendChild(wrap);
-      } else {
-        tdEmail.textContent = '';
+        td3.appendChild(wrap);
       }
 
-      tr.appendChild(tdEmail);
-      tableBody.appendChild(tr);
+      tr.appendChild(td3);
+      tbody.appendChild(tr);
     });
 
-    // Copy knop (event delegation) – 1x
-    if (!tableBody.dataset.copyHandlerAttached) {
-      tableBody.addEventListener('click', function (e) {
+    // copy handler 1x
+    if (!tbody.dataset.copyHandlerAttached) {
+      tbody.addEventListener('click', function (e) {
         var btn = e.target.closest('.hvdz-copy-btn');
         if (!btn) return;
 
@@ -143,7 +159,7 @@
           setTimeout(function () {
             btn.textContent = old;
             btn.disabled = false;
-          }, 1500);
+          }, 1200);
         }
 
         if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -160,19 +176,44 @@
           done();
         }
       });
-      tableBody.dataset.copyHandlerAttached = '1';
+      tbody.dataset.copyHandlerAttached = '1';
     }
 
-    log('[RegCodes] ✅ tabel opgebouwd:', tableBody.querySelectorAll('tr').length);
+    STATE.builtForSignature = sig;
+    log('[RegCodes] ✅ tabel opgebouwd:', tbody.querySelectorAll('tr').length);
     return true;
   }
 
-  var tries = 0;
-  var maxTries = 40;
-  (function tick() {
-    tries++;
-    if (buildTable()) return;
-    if (tries < maxTries) setTimeout(tick, 250);
-    else warn('[RegCodes] gestopt na retries');
-  })();
+  function startObserver() {
+    if (STATE.observer) return;
+
+    STATE.observer = new MutationObserver(function () {
+      // bij SPA navigatie verschijnen elementen later → opnieuw proberen
+      buildTable();
+    });
+
+    STATE.observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true
+    });
+
+    log('[RegCodes] observer gestart (SPA-proof)');
+  }
+
+  // Init: meteen proberen + retries + observer
+  function init() {
+    startObserver();
+
+    var tries = 0;
+    var maxTries = 60;
+
+    (function tick() {
+      tries++;
+      if (buildTable()) return;
+      if (tries < maxTries) setTimeout(tick, 250);
+      else warn('[RegCodes] geen data/tabel gevonden binnen retries (observer blijft luisteren)');
+    })();
+  }
+
+  init();
 })();
