@@ -1,216 +1,123 @@
+<script>
 (function () {
-  var STATE = { builtSig: null, observer: null };
+  if (window.__regcodesInitialized) return;
+  window.__regcodesInitialized = true;
 
-  function qs(s, r){ return (r||document).querySelector(s); }
-  function qsa(s, r){ return Array.from((r||document).querySelectorAll(s)); }
+  const MAX_TRIES = 40;
+  const INTERVAL = 300;
+  let tries = 0;
 
-  function stripHtml(input){
-    var s = String(input || '');
-    var div = document.createElement('div');
-    div.innerHTML = s;
-    return (div.textContent || div.innerText || '').trim();
+  function hasValidData(container) {
+    if (!container) return false;
+    const items = container.querySelectorAll("li");
+    return Array.from(items).some(li => {
+      const t = (li.textContent || "").trim();
+      return t && !t.includes("{User.");
+    });
   }
 
-  function cleanRaw(raw){
-    var s = stripHtml(raw);
-    s = s.replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').trim();
-    return s;
-  }
+  function buildTable() {
+    const container = document.getElementById("registratie-raw-data");
+    const tableBody = document.querySelector("#registratie-tabel tbody");
 
-  function getValues(){
-    var c = document.getElementById('registratie-raw-data');
-    if (!c) return null;
+    if (!container || !tableBody) return false;
+    if (!hasValidData(container)) return false;
 
-    return qsa('li', c)
-      .map(function(li){
-        var v = (li.getAttribute('data-code') || li.textContent || '').trim();
-        return cleanRaw(v);
-      })
-      .filter(function(v){
-        if (!v) return false;
-        if (v.indexOf('{User.Registratiecode') === 0) return false;
-        return true;
-      });
-  }
+    tableBody.innerHTML = "";
 
-  function makeShareUrl(code){
-    return 'https://mdw-hvdz.hartstichting.nl/nl/?unique_code=' + encodeURIComponent(code);
-  }
+    const rows = Array.from(container.querySelectorAll("li"))
+      .map(li => (li.textContent || "").trim())
+      .filter(Boolean)
+      .filter(v => !v.includes("{User."));
 
-  function buildMailto(email, url){
-    // email mag leeg zijn → mailto:?subject=...&body=...
-    var subject = 'Uitnodiging Hartstichting Voordeelplatform';
-    var body = [
-      'Beste collega,',
-      '',
-      'Je bent uitgenodigd voor het Hartstichting Voordeelplatform.',
-      '',
-      'Gebruik onderstaande persoonlijke link:',
-      url,
-      '',
-      'Met vriendelijke groet,'
-    ].join('\n');
+    if (!rows.length) return false;
 
-    return 'mailto:' + encodeURIComponent(email || '') +
-      '?subject=' + encodeURIComponent(subject) +
-      '&body=' + encodeURIComponent(body);
-  }
-
-  function signature(v){ return v.join('||'); }
-
-  function isUsedStatus(status){
-    var s = (status || '').toLowerCase();
-    return s.includes('gebruikt'); // match "Gebruikt"
-  }
-
-  function buildTable(){
-    var values = getValues();
-    if (!values || !values.length) return false;
-
-    var tbody = qs('#registratie-tabel tbody');
-    if (!tbody) return false;
-
-    var sig = signature(values);
-    if (STATE.builtSig === sig && tbody.children.length) return true;
-
-    tbody.innerHTML = '';
-
-    values.forEach(function(raw){
-      var parts = raw.split(';').map(function(p){ return p.trim(); });
-      while (parts.length < 3) parts.push('');
-
-      var code = cleanRaw(parts[0] || '');
-      var status = cleanRaw(parts[1] || 'Beschikbaar');
-      var email = cleanRaw(parts[2] || '');
-
+    rows.forEach(raw => {
+      const [code, status = "", email = ""] = raw.split(";").map(s => s.trim());
       if (!code) return;
 
-      var used = isUsedStatus(status);
-      var url = makeShareUrl(code);
+      const shareUrl =
+        "https://mdw-hvdz.hartstichting.nl/nl/?unique_code=" +
+        encodeURIComponent(code);
 
-      var tr = document.createElement('tr');
+      const tr = document.createElement("tr");
 
-      // ACTIES
-      var tdA = document.createElement('td');
-      var actions = document.createElement('div');
-      actions.className = 'hs-actions';
+      // acties
+      const tdActions = document.createElement("td");
+      tdActions.className = "hs-actions";
 
-      // Mail (altijd beschikbaar als NIET gebruikt, ook zonder email)
-      var mailBtn = document.createElement('a');
-      mailBtn.className = 'hs-icon-btn';
-      mailBtn.innerHTML = mailIcon();
+      const copyBtn = document.createElement("button");
+      copyBtn.className = "hs-icon-btn";
+      copyBtn.type = "button";
+      copyBtn.innerHTML = "📋";
+      copyBtn.onclick = () => {
+        navigator.clipboard.writeText(shareUrl);
+      };
 
-      // Copy
-      var copyBtn = document.createElement('button');
-      copyBtn.type = 'button';
-      copyBtn.className = 'hs-icon-btn hvdz-copy-btn';
-      copyBtn.setAttribute('data-link', url);
-      copyBtn.title = 'Kopieer link';
-      copyBtn.innerHTML = copyIcon();
+      const mailBtn = document.createElement("a");
+      mailBtn.className = "hs-icon-btn";
+      mailBtn.innerHTML = "✉️";
+      mailBtn.href =
+        "mailto:" +
+        encodeURIComponent(email || "") +
+        "?subject=" +
+        encodeURIComponent("Uitnodiging benefits platform") +
+        "&body=" +
+        encodeURIComponent(
+          "Gebruik deze persoonlijke link:\n\n" + shareUrl
+        );
 
-      if (used) {
-        mailBtn.classList.add('is-disabled');
-        mailBtn.title = 'Code is gebruikt';
-        copyBtn.classList.add('is-disabled');
+      if (status.toLowerCase().includes("gebruikt")) {
         copyBtn.disabled = true;
-      } else {
-        mailBtn.href = buildMailto(email, url);
-        mailBtn.title = 'Mail openen';
+        mailBtn.classList.add("is-disabled");
+        mailBtn.removeAttribute("href");
       }
 
-      actions.appendChild(mailBtn);
-      actions.appendChild(copyBtn);
-      tdA.appendChild(actions);
-      tr.appendChild(tdA);
+      tdActions.appendChild(copyBtn);
+      tdActions.appendChild(mailBtn);
 
-      // CODE
-      var tdC = document.createElement('td');
-      var codeSpan = document.createElement('span');
-      codeSpan.className = 'hvdz-code';
-      codeSpan.textContent = code;
-      tdC.appendChild(codeSpan);
-      tr.appendChild(tdC);
+      // code
+      const tdCode = document.createElement("td");
+      tdCode.innerHTML = `<span class="hvdz-code">${code}</span>`;
 
-      // STATUS
-      var tdS = document.createElement('td');
-      tdS.textContent = status;
-      tr.appendChild(tdS);
+      // status
+      const tdStatus = document.createElement("td");
+      tdStatus.textContent = status;
 
-      // EMAIL
-      var tdE = document.createElement('td');
-      if (email) {
-        var a = document.createElement('a');
-        a.href = 'mailto:' + encodeURIComponent(email);
-        a.className = 'hs-email';
-        a.textContent = email;
-        tdE.appendChild(a);
-      }
-      tr.appendChild(tdE);
+      // email
+      const tdEmail = document.createElement("td");
+      tdEmail.textContent = email;
 
-      tbody.appendChild(tr);
+      tr.appendChild(tdActions);
+      tr.appendChild(tdCode);
+      tr.appendChild(tdStatus);
+      tr.appendChild(tdEmail);
+
+      tableBody.appendChild(tr);
     });
 
-    // Copy handler (only once)
-    if (!tbody.dataset.copyHandler) {
-      tbody.addEventListener('click', function(e){
-        var btn = e.target.closest('.hvdz-copy-btn');
-        if (!btn) return;
-        if (btn.disabled) return;
-
-        var link = btn.getAttribute('data-link');
-        if (!link) return;
-
-        function done(){
-          var old = btn.title;
-          btn.title = 'Gekopieerd!';
-          setTimeout(function(){ btn.title = old; }, 900);
-        }
-
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(link).then(done).catch(done);
-        } else {
-          var t = document.createElement('textarea');
-          t.value = link;
-          t.style.position = 'fixed';
-          t.style.opacity = '0';
-          document.body.appendChild(t);
-          t.select();
-          try { document.execCommand('copy'); } catch (e2) {}
-          document.body.removeChild(t);
-          done();
-        }
-      });
-      tbody.dataset.copyHandler = '1';
-    }
-
-    STATE.builtSig = sig;
     return true;
   }
 
-  function startObserver(){
-    if (STATE.observer) return;
-    STATE.observer = new MutationObserver(buildTable);
-    STATE.observer.observe(document.documentElement, { childList:true, subtree:true });
+  function tryBuild() {
+    tries++;
+    if (buildTable()) return;
+    if (tries < MAX_TRIES) {
+      setTimeout(tryBuild, INTERVAL);
+    }
   }
 
-  function copyIcon(){
-    return (
-      '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
-      '<rect x="9" y="9" width="13" height="13" rx="2" stroke-width="2"></rect>' +
-      '<rect x="3" y="3" width="13" height="13" rx="2" stroke-width="2"></rect>' +
-      '</svg>'
-    );
-  }
+  // 1️⃣ Direct proberen
+  tryBuild();
 
-  function mailIcon(){
-    return (
-      '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
-      '<path d="M4 6h16v12H4z" stroke-width="2"></path>' +
-      '<path d="M4 6l8 7 8-7" stroke-width="2"></path>' +
-      '</svg>'
-    );
-  }
+  // 2️⃣ Luisteren naar DOM changes (SPA fix)
+  const observer = new MutationObserver(() => {
+    if (buildTable()) observer.disconnect();
+  });
 
-  startObserver();
-  setTimeout(buildTable, 50);
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true
+  });
 })();
+</script>
