@@ -3,7 +3,6 @@
   'use strict';
 
   try {
-    // Mag meerdere keren draaien (bij SPA/history changes)
     var MAX_TRIES = 80;
     var INTERVAL = 250;
     var tries = 0;
@@ -30,11 +29,9 @@
 
       return lis
         .map(function (li) {
-          // Soms zit er HTML/whitespace in; we normaliseren hard
           return normalize(stripHtml(li.textContent || ''));
         })
         .filter(Boolean)
-        // Placeholder(s) wegfilteren als ze niet gevuld zijn
         .filter(function (v) {
           return v.indexOf('{User.Registratiecode') !== 0;
         });
@@ -78,9 +75,7 @@
           t.style.opacity = '0';
           document.body.appendChild(t);
           t.select();
-          try {
-            document.execCommand('copy');
-          } catch (e2) {}
+          try { document.execCommand('copy'); } catch (e2) {}
           document.body.removeChild(t);
           done();
         }
@@ -94,17 +89,13 @@
       if (!tbody) return false;
 
       var rows = getRows();
-      if (!rows) return false;       // container nog niet aanwezig
-      if (!rows.length) return false; // nog geen data (of placeholders)
+      if (!rows) return false;
+      if (!rows.length) return false;
 
-      // Bouw tabel opnieuw
       tbody.innerHTML = '';
 
       rows.forEach(function (raw) {
-        // Verwacht: "CODE; Status; email" (status/email mogen leeg)
-        var parts = raw.split(';').map(function (p) {
-          return normalize(p);
-        });
+        var parts = raw.split(';').map(function (p) { return normalize(p); });
         while (parts.length < 3) parts.push('');
 
         var code = parts[0];
@@ -118,20 +109,19 @@
 
         var tr = document.createElement('tr');
 
-        // Acties
+        // Acties (zoals je oude versie)
         var tdA = document.createElement('td');
+
+        var mailClass = 'hs-icon-btn hs-mail-btn' + (used ? ' is-disabled' : '');
+        var mailAttrs = used
+          ? 'class="' + mailClass + '" aria-disabled="true"'
+          : 'class="' + mailClass + '" href="mailto:' + encodeURIComponent(email) +
+            '?subject=' + encodeURIComponent('Uitnodiging benefits platform') +
+            '&body=' + encodeURIComponent('Gebruik deze persoonlijke link:\n\n' + url) + '"';
+
         tdA.innerHTML =
           '<div class="hs-actions">' +
-            '<a class="hs-icon-btn hs-mail-btn" ' +
-              (used
-                ? ''
-                : 'href="mailto:' + encodeURIComponent(email) +
-                  '?subject=' + encodeURIComponent('Uitnodiging benefits platform') +
-                  '&body=' + encodeURIComponent('Gebruik deze persoonlijke link:\n\n' + url) + '"'
-              ) +
-              ' title="Mail openen" ' + (used ? 'aria-disabled="true"' : '') + '>' +
-              '✉️' +
-            '</a>' +
+            '<a ' + mailAttrs + ' title="Mail openen">✉️</a>' +
             '<button class="hs-icon-btn hs-copy-btn" type="button" data-link="' + url + '" ' +
               (used ? 'disabled' : '') +
               ' title="Kopieer link">📋</button>' +
@@ -145,7 +135,7 @@
         var tdS = document.createElement('td');
         tdS.textContent = status;
 
-        // Email/Medewerker
+        // Medewerker / email
         var tdE = document.createElement('td');
         tdE.textContent = email;
 
