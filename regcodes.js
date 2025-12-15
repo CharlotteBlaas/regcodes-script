@@ -4,13 +4,41 @@
   function qs(s, r){ return (r||document).querySelector(s); }
   function qsa(s, r){ return Array.from((r||document).querySelectorAll(s)); }
 
+  function stripHtml(input){
+    var s = String(input || '');
+    // decode entities + strip tags via DOM
+    var div = document.createElement('div');
+    div.innerHTML = s;
+    return (div.textContent || div.innerText || '').trim();
+  }
+
+  function cleanRaw(raw){
+    // 1) strip html tags/entities
+    var s = stripHtml(raw);
+
+    // 2) extra cleanup: sommige systemen laten rare whitespace/nbsp achter
+    s = s.replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').trim();
+
+    return s;
+  }
+
   function getValues(){
     var c = document.getElementById('registratie-raw-data');
     if (!c) return null;
 
     return qsa('li', c)
-      .map(li => (li.getAttribute('data-code') || '').trim())
-      .filter(v => v && !v.startsWith('{User.Registratiecode'));
+      .map(function(li){
+        // pak data-code of textContent fallback
+        var v = (li.getAttribute('data-code') || li.textContent || '').trim();
+        v = cleanRaw(v);
+        return v;
+      })
+      .filter(function(v){
+        if (!v) return false;
+        // filter placeholders
+        if (v.indexOf('{User.Registratiecode') === 0) return false;
+        return true;
+      });
   }
 
   function makeShareUrl(code){
@@ -49,13 +77,23 @@
 
     tbody.innerHTML = '';
 
-    values.forEach(raw => {
-      var parts = raw.split(';');
+    values.forEach(function(raw){
+      // raw verwacht: CODE;STATUS;EMAIL
+      // maar raw kan nog ';' bevatten in vreemde vormen → eerst cleanen is al gedaan
+      var parts = raw.split(';').map(function(p){ return p.trim(); });
       while (parts.length < 3) parts.push('');
 
-      var code = parts[0].trim();
-      var status = parts[1].trim() || 'Beschikbaar';
-      var email = parts[2].trim();
+      var code = parts[0] || '';
+      var status = parts[1] || 'Beschikbaar';
+      var email = parts[2] || '';
+
+      // extra: als code nog steeds tag-achtig is, nogmaals strippen
+      code = cleanRaw(code);
+      status = cleanRaw(status);
+      email = cleanRaw(email);
+
+      if (!code) return;
+
       var url = makeShareUrl(code);
 
       var tr = document.createElement('tr');
@@ -125,10 +163,31 @@
         if (!btn) return;
 
         var link = btn.getAttribute('data-link');
-        navigator.clipboard.writeText(link).then(() => {
+        if (!link) return;
+
+        function done(){
+          btn.disabled = true;
+          var old = btn.title;
           btn.title = 'Gekopieerd!';
-          setTimeout(() => btn.title = 'Kopieer link', 900);
-        });
+          setTimeout(function(){
+            btn.title = old;
+            btn.disabled = false;
+          }, 900);
+        }
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(link).then(done).catch(done);
+        } else {
+          var t = document.createElement('textarea');
+          t.value = link;
+          t.style.position = 'fixed';
+          t.style.opacity = '0';
+          document.body.appendChild(t);
+          t.select();
+          try { document.execCommand('copy'); } catch (e2) {}
+          document.body.removeChild(t);
+          done();
+        }
       });
       tbody.dataset.copyHandler = '1';
     }
@@ -144,19 +203,21 @@
   }
 
   function copyIcon(){
-    return `
-      <svg viewBox="0 0 24 24" fill="none">
-        <rect x="9" y="9" width="13" height="13" rx="2" stroke-width="2"/>
-        <rect x="3" y="3" width="13" height="13" rx="2" stroke-width="2"/>
-      </svg>`;
+    return (
+      '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
+      '<rect x="9" y="9" width="13" height="13" rx="2" stroke-width="2"></rect>' +
+      '<rect x="3" y="3" width="13" height="13" rx="2" stroke-width="2"></rect>' +
+      '</svg>'
+    );
   }
 
   function mailIcon(){
-    return `
-      <svg viewBox="0 0 24 24" fill="none">
-        <path d="M4 6h16v12H4z" stroke-width="2"/>
-        <path d="M4 6l8 7 8-7" stroke-width="2"/>
-      </svg>`;
+    return (
+      '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
+      '<path d="M4 6h16v12H4z" stroke-width="2"></path>' +
+      '<path d="M4 6l8 7 8-7" stroke-width="2"></path>' +
+      '</svg>'
+    );
   }
 
   startObserver();
