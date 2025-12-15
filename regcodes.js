@@ -1,123 +1,139 @@
 <script>
 (function () {
-  if (window.__regcodesInitialized) return;
-  window.__regcodesInitialized = true;
+  try {
+    // Elke keer opnieuw mogen draaien (voor History Change)
+    var MAX_TRIES = 80;
+    var INTERVAL = 250;
+    var tries = 0;
 
-  const MAX_TRIES = 40;
-  const INTERVAL = 300;
-  let tries = 0;
+    function stripHtml(input){
+      var div = document.createElement('div');
+      div.innerHTML = String(input || '');
+      return (div.textContent || div.innerText || '').trim();
+    }
 
-  function hasValidData(container) {
-    if (!container) return false;
-    const items = container.querySelectorAll("li");
-    return Array.from(items).some(li => {
-      const t = (li.textContent || "").trim();
-      return t && !t.includes("{User.");
-    });
-  }
+    function getRows(){
+      var container = document.getElementById('registratie-raw-data');
+      if (!container) return null;
 
-  function buildTable() {
-    const container = document.getElementById("registratie-raw-data");
-    const tableBody = document.querySelector("#registratie-tabel tbody");
+      var lis = Array.from(container.querySelectorAll('li'));
+      if (!lis.length) return [];
 
-    if (!container || !tableBody) return false;
-    if (!hasValidData(container)) return false;
+      return lis
+        .map(function(li){ return stripHtml(li.textContent || ''); })
+        .map(function(s){ return s.replace(/\u00A0/g,' ').replace(/\s+/g,' ').trim(); })
+        .filter(Boolean)
+        .filter(function(v){ return v.indexOf('{User.Registratiecode') !== 0; });
+    }
 
-    tableBody.innerHTML = "";
+    function makeShareUrl(code){
+      return 'https://mdw-hvdz.hartstichting.nl/nl/?unique_code=' + encodeURIComponent(code);
+    }
 
-    const rows = Array.from(container.querySelectorAll("li"))
-      .map(li => (li.textContent || "").trim())
-      .filter(Boolean)
-      .filter(v => !v.includes("{User."));
+    function isUsed(status){
+      return (status || '').toLowerCase().indexOf('gebruikt') !== -1;
+    }
 
-    if (!rows.length) return false;
+    function build(){
+      var tbody = document.querySelector('#registratie-tabel tbody');
+      if (!tbody) return false;
 
-    rows.forEach(raw => {
-      const [code, status = "", email = ""] = raw.split(";").map(s => s.trim());
-      if (!code) return;
+      var rows = getRows();
+      if (!rows) return false;
+      if (!rows.length) return false;
 
-      const shareUrl =
-        "https://mdw-hvdz.hartstichting.nl/nl/?unique_code=" +
-        encodeURIComponent(code);
+      tbody.innerHTML = '';
 
-      const tr = document.createElement("tr");
+      rows.forEach(function(raw){
+        var parts = raw.split(';').map(function(p){ return (p || '').trim(); });
+        while(parts.length < 3) parts.push('');
 
-      // acties
-      const tdActions = document.createElement("td");
-      tdActions.className = "hs-actions";
+        var code = parts[0];
+        var status = parts[1] || 'Beschikbaar';
+        var email = parts[2] || '';
 
-      const copyBtn = document.createElement("button");
-      copyBtn.className = "hs-icon-btn";
-      copyBtn.type = "button";
-      copyBtn.innerHTML = "📋";
-      copyBtn.onclick = () => {
-        navigator.clipboard.writeText(shareUrl);
-      };
+        if (!code) return;
 
-      const mailBtn = document.createElement("a");
-      mailBtn.className = "hs-icon-btn";
-      mailBtn.innerHTML = "✉️";
-      mailBtn.href =
-        "mailto:" +
-        encodeURIComponent(email || "") +
-        "?subject=" +
-        encodeURIComponent("Uitnodiging benefits platform") +
-        "&body=" +
-        encodeURIComponent(
-          "Gebruik deze persoonlijke link:\n\n" + shareUrl
-        );
+        var url = makeShareUrl(code);
+        var used = isUsed(status);
 
-      if (status.toLowerCase().includes("gebruikt")) {
-        copyBtn.disabled = true;
-        mailBtn.classList.add("is-disabled");
-        mailBtn.removeAttribute("href");
+        var tr = document.createElement('tr');
+
+        // Acties
+        var tdA = document.createElement('td');
+        tdA.innerHTML =
+          '<div class="hs-actions">' +
+            '<a class="hs-icon-btn hs-mail-btn" ' + (used ? '' : 'href="mailto:' + encodeURIComponent(email) +
+              '?subject=' + encodeURIComponent('Uitnodiging benefits platform') +
+              '&body=' + encodeURIComponent('Gebruik deze persoonlijke link:\n\n' + url) + '"') +
+            ' title="Mail openen" ' + (used ? 'aria-disabled="true"' : '') + '>' +
+              '✉️' +
+            '</a>' +
+            '<button class="hs-icon-btn hs-copy-btn" type="button" data-link="' + url + '" ' + (used ? 'disabled' : '') + ' title="Kopieer link">📋</button>' +
+          '</div>';
+
+        // Code
+        var tdC = document.createElement('td');
+        tdC.innerHTML = '<span class="hvdz-code">' + code + '</span>';
+
+        // Status
+        var tdS = document.createElement('td');
+        tdS.textContent = status;
+
+        // Email (alleen als gevuld)
+        var tdE = document.createElement('td');
+        tdE.textContent = email;
+
+        tr.appendChild(tdA);
+        tr.appendChild(tdC);
+        tr.appendChild(tdS);
+        tr.appendChild(tdE);
+        tbody.appendChild(tr);
+      });
+
+      // 1x click handler (delegation)
+      if (!tbody.dataset.copyHandlerAttached) {
+        tbody.addEventListener('click', function(e){
+          var btn = e.target.closest('.hs-copy-btn');
+          if (!btn || btn.disabled) return;
+          var link = btn.getAttribute('data-link');
+          if (!link) return;
+
+          function done(){
+            var old = btn.textContent;
+            btn.textContent = '✅';
+            setTimeout(function(){ btn.textContent = old; }, 900);
+          }
+
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(link).then(done).catch(done);
+          } else {
+            var t = document.createElement('textarea');
+            t.value = link;
+            t.style.position = 'fixed';
+            t.style.opacity = '0';
+            document.body.appendChild(t);
+            t.select();
+            try { document.execCommand('copy'); } catch(e2) {}
+            document.body.removeChild(t);
+            done();
+          }
+        });
+        tbody.dataset.copyHandlerAttached = '1';
       }
 
-      tdActions.appendChild(copyBtn);
-      tdActions.appendChild(mailBtn);
-
-      // code
-      const tdCode = document.createElement("td");
-      tdCode.innerHTML = `<span class="hvdz-code">${code}</span>`;
-
-      // status
-      const tdStatus = document.createElement("td");
-      tdStatus.textContent = status;
-
-      // email
-      const tdEmail = document.createElement("td");
-      tdEmail.textContent = email;
-
-      tr.appendChild(tdActions);
-      tr.appendChild(tdCode);
-      tr.appendChild(tdStatus);
-      tr.appendChild(tdEmail);
-
-      tableBody.appendChild(tr);
-    });
-
-    return true;
-  }
-
-  function tryBuild() {
-    tries++;
-    if (buildTable()) return;
-    if (tries < MAX_TRIES) {
-      setTimeout(tryBuild, INTERVAL);
+      return true;
     }
+
+    function tick(){
+      tries++;
+      if (build()) return;
+      if (tries < MAX_TRIES) setTimeout(tick, INTERVAL);
+    }
+
+    tick();
+  } catch (err) {
+    console.error('[RegCodes] fatal error:', err);
   }
-
-  // 1️⃣ Direct proberen
-  tryBuild();
-
-  // 2️⃣ Luisteren naar DOM changes (SPA fix)
-  const observer = new MutationObserver(() => {
-    if (buildTable()) observer.disconnect();
-  });
-
-  observer.observe(document.documentElement, {
-    childList: true,
-    subtree: true
-  });
 })();
 </script>
