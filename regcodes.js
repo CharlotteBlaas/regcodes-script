@@ -6,19 +6,14 @@
 
   function stripHtml(input){
     var s = String(input || '');
-    // decode entities + strip tags via DOM
     var div = document.createElement('div');
     div.innerHTML = s;
     return (div.textContent || div.innerText || '').trim();
   }
 
   function cleanRaw(raw){
-    // 1) strip html tags/entities
     var s = stripHtml(raw);
-
-    // 2) extra cleanup: sommige systemen laten rare whitespace/nbsp achter
     s = s.replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').trim();
-
     return s;
   }
 
@@ -28,14 +23,11 @@
 
     return qsa('li', c)
       .map(function(li){
-        // pak data-code of textContent fallback
         var v = (li.getAttribute('data-code') || li.textContent || '').trim();
-        v = cleanRaw(v);
-        return v;
+        return cleanRaw(v);
       })
       .filter(function(v){
         if (!v) return false;
-        // filter placeholders
         if (v.indexOf('{User.Registratiecode') === 0) return false;
         return true;
       });
@@ -46,6 +38,7 @@
   }
 
   function buildMailto(email, url){
+    // email mag leeg zijn → mailto:?subject=...&body=...
     var subject = 'Uitnodiging Hartstichting Voordeelplatform';
     var body = [
       'Beste collega,',
@@ -58,12 +51,17 @@
       'Met vriendelijke groet,'
     ].join('\n');
 
-    return 'mailto:' + encodeURIComponent(email) +
+    return 'mailto:' + encodeURIComponent(email || '') +
       '?subject=' + encodeURIComponent(subject) +
       '&body=' + encodeURIComponent(body);
   }
 
   function signature(v){ return v.join('||'); }
+
+  function isUsedStatus(status){
+    var s = (status || '').toLowerCase();
+    return s.includes('gebruikt'); // match "Gebruikt"
+  }
 
   function buildTable(){
     var values = getValues();
@@ -78,45 +76,31 @@
     tbody.innerHTML = '';
 
     values.forEach(function(raw){
-      // raw verwacht: CODE;STATUS;EMAIL
-      // maar raw kan nog ';' bevatten in vreemde vormen → eerst cleanen is al gedaan
       var parts = raw.split(';').map(function(p){ return p.trim(); });
       while (parts.length < 3) parts.push('');
 
-      var code = parts[0] || '';
-      var status = parts[1] || 'Beschikbaar';
-      var email = parts[2] || '';
-
-      // extra: als code nog steeds tag-achtig is, nogmaals strippen
-      code = cleanRaw(code);
-      status = cleanRaw(status);
-      email = cleanRaw(email);
+      var code = cleanRaw(parts[0] || '');
+      var status = cleanRaw(parts[1] || 'Beschikbaar');
+      var email = cleanRaw(parts[2] || '');
 
       if (!code) return;
 
+      var used = isUsedStatus(status);
       var url = makeShareUrl(code);
 
       var tr = document.createElement('tr');
 
-      /* ACTIES (kolom 1) */
+      // ACTIES
       var tdA = document.createElement('td');
       var actions = document.createElement('div');
       actions.className = 'hs-actions';
 
-      // Mail icoon (altijd zichtbaar)
+      // Mail (altijd beschikbaar als NIET gebruikt, ook zonder email)
       var mailBtn = document.createElement('a');
       mailBtn.className = 'hs-icon-btn';
       mailBtn.innerHTML = mailIcon();
 
-      if (email) {
-        mailBtn.href = buildMailto(email, url);
-        mailBtn.title = 'Mail openen';
-      } else {
-        mailBtn.classList.add('is-disabled');
-        mailBtn.title = 'Geen e-mailadres bekend';
-      }
-
-      // Copy icoon (altijd actief)
+      // Copy
       var copyBtn = document.createElement('button');
       copyBtn.type = 'button';
       copyBtn.className = 'hs-icon-btn hvdz-copy-btn';
@@ -124,12 +108,22 @@
       copyBtn.title = 'Kopieer link';
       copyBtn.innerHTML = copyIcon();
 
+      if (used) {
+        mailBtn.classList.add('is-disabled');
+        mailBtn.title = 'Code is gebruikt';
+        copyBtn.classList.add('is-disabled');
+        copyBtn.disabled = true;
+      } else {
+        mailBtn.href = buildMailto(email, url);
+        mailBtn.title = 'Mail openen';
+      }
+
       actions.appendChild(mailBtn);
       actions.appendChild(copyBtn);
       tdA.appendChild(actions);
       tr.appendChild(tdA);
 
-      /* CODE */
+      // CODE
       var tdC = document.createElement('td');
       var codeSpan = document.createElement('span');
       codeSpan.className = 'hvdz-code';
@@ -137,12 +131,12 @@
       tdC.appendChild(codeSpan);
       tr.appendChild(tdC);
 
-      /* STATUS */
+      // STATUS
       var tdS = document.createElement('td');
       tdS.textContent = status;
       tr.appendChild(tdS);
 
-      /* EMAIL */
+      // EMAIL
       var tdE = document.createElement('td');
       if (email) {
         var a = document.createElement('a');
@@ -156,23 +150,20 @@
       tbody.appendChild(tr);
     });
 
-    /* copy handler */
+    // Copy handler (only once)
     if (!tbody.dataset.copyHandler) {
       tbody.addEventListener('click', function(e){
         var btn = e.target.closest('.hvdz-copy-btn');
         if (!btn) return;
+        if (btn.disabled) return;
 
         var link = btn.getAttribute('data-link');
         if (!link) return;
 
         function done(){
-          btn.disabled = true;
           var old = btn.title;
           btn.title = 'Gekopieerd!';
-          setTimeout(function(){
-            btn.title = old;
-            btn.disabled = false;
-          }, 900);
+          setTimeout(function(){ btn.title = old; }, 900);
         }
 
         if (navigator.clipboard && navigator.clipboard.writeText) {
