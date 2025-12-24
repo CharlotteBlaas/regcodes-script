@@ -5,14 +5,14 @@
   window.__REGCODES_BOOTSTRAPPED = true;
 
   var INTERVAL = 250;
-  var MAX_TRIES = 240; // 240 * 250ms = 60s (ruim genoeg voor late user-data)
+  var MAX_TRIES = 240; // 240 * 250ms = 60s
   var tries = 0;
 
   var lastSig = null;
   var ulObserver = null;
   var historyHooked = false;
 
-  // Placeholder uit jullie omgeving:
+  // Bedrijfsnaam placeholder (wordt door jullie systeem gevuld)
   var COMPANY_NAME = '{User.CompanyName}';
 
   function stripHtml(input){
@@ -20,8 +20,12 @@
     div.innerHTML = String(input || '');
     return (div.textContent || div.innerText || '').trim();
   }
+
   function cleanRaw(raw){
-    return stripHtml(raw).replace(/\u00A0/g,' ').replace(/\s+/g,' ').trim();
+    return stripHtml(raw)
+      .replace(/\u00A0/g,' ')
+      .replace(/\s+/g,' ')
+      .trim();
   }
 
   function isPlaceholder(v){
@@ -40,26 +44,29 @@
     if (!lis.length) return [];
 
     return lis
-      .map(function(li){ return cleanRaw(li.getAttribute('data-code') || li.textContent || ''); })
+      .map(function(li){
+        return cleanRaw(li.getAttribute('data-code') || li.textContent || '');
+      })
       .filter(Boolean)
-      .filter(function(v){ return !isPlaceholder(v); });
+      .filter(function(v){
+        return !isPlaceholder(v);
+      });
   }
 
   function makeShareUrl(code){
     return 'https://mdw-hvdz.hartstichting.nl/nl/?unique_code=' + encodeURIComponent(code);
   }
 
+  function getCompanyName(){
+    var name = cleanRaw(COMPANY_NAME);
+    if (!name || name.indexOf('{User.CompanyName') === 0) {
+      return '[Naam werkgever / organisatie]';
+    }
+    return name;
+  }
+
   function buildMailto(email, url, code){
     var subject = 'Een extra voordeel voor jou: toegang tot de Hart voor de Zaak-voordeelshop';
-
-    // “Unique code wel meegeven maar niet zichtbaar”: we tonen een klikbare tekst, niet de URL zelf.
-    // In de href zit de unieke link wél.
-    var linkText = 'Klik hier om je te registreren';
-    var htmlLink = '<a href="' + url + '">' + linkText + '</a>';
-
-    // Bedrijfsnaam: als placeholder niet gevuld is, houden we het neutraal.
-    var company = cleanRaw(COMPANY_NAME);
-    var hasCompany = company && company.indexOf('{User.CompanyName') !== 0;
 
     var body = [
       'Beste collega,',
@@ -68,10 +75,10 @@
       '',
       'Als medewerker krijg je toegang tot de Hart voor de Zaak-voordeelshop. In deze shop vind je mooie deals op allerlei producten en uitjes, speciaal voor medewerkers van Hart voor de Zaak-partners. Daarnaast krijg je toegang tot digitale tools uit het Hartstichting Vitaliteitspakket. Deze tools helpen je om je hart beter te leren kennen en ondersteunen je om goed voor je hart te zorgen, op een manier die bij jou past.',
       '',
-      'Via onderstaande link kun je je eenvoudig registreren. Je hebt daarvoor alleen de code nodig die hieronder staat.',
+      'Via onderstaande persoonlijke link kun je je eenvoudig registreren. Je hebt daarvoor alleen de code nodig die hieronder staat.',
       '',
-      // Klikbare tekst (url zit in href)
-      htmlLink,
+      'Persoonlijke registratielink:',
+      url,
       '',
       'Code: ' + code,
       '',
@@ -80,21 +87,23 @@
       'We nodigen je van harte uit om hier gebruik van te maken. Zo investeren we samen, met de Hartstichting, in gezondheid – ook op de werkvloer.',
       '',
       'Met vriendelijke groet,',
-      hasCompany ? company : '[Naam werkgever / organisatie]'
+      getCompanyName()
     ].join('\n');
 
-    return 'mailto:' + encodeURIComponent(email || '') +
+    return (
+      'mailto:' + encodeURIComponent(email || '') +
       '?subject=' + encodeURIComponent(subject) +
-      // Let op: mail clients ondersteunen HTML in body niet altijd. Veel Outlook varianten tonen dit wél als HTML-achtige tekst.
-      // Toch is dit de beste manier om de link “niet zichtbaar” te maken maar wel klikbaar in clients die het ondersteunen.
-      '&body=' + encodeURIComponent(body);
+      '&body=' + encodeURIComponent(body)
+    );
   }
 
   function isUsed(status){
     return String(status || '').toLowerCase().indexOf('gebruikt') !== -1;
   }
 
-  function signature(rows){ return rows.join('||'); }
+  function signature(rows){
+    return rows.join('||');
+  }
 
   function copyIcon(){
     return (
@@ -104,6 +113,7 @@
       '</svg>'
     );
   }
+
   function mailIcon(){
     return (
       '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
@@ -152,8 +162,8 @@
     if (!tbody) return false;
 
     var rows = getRows();
-    if (rows === null) return false;      // container nog niet aanwezig
-    if (!rows.length) return false;       // data nog niet gevuld (placeholders)
+    if (rows === null) return false;
+    if (!rows.length) return false;
 
     var sig = signature(rows);
     if (sig === lastSig && tbody.children.length) return true;
@@ -219,7 +229,7 @@
       tdS.textContent = status;
       tr.appendChild(tdS);
 
-      // Medewerker (email-link)
+      // Medewerker
       var tdE = document.createElement('td');
       if (email) {
         var a = document.createElement('a');
@@ -244,7 +254,6 @@
     if (tries < MAX_TRIES) setTimeout(tick, INTERVAL);
   }
 
-  // Observeer specifiek de UL zodat we rebuilden zodra user-data erin “plopt”
   function startUlObserver(){
     if (ulObserver) return;
 
@@ -252,7 +261,6 @@
     if (!container) return;
 
     ulObserver = new MutationObserver(function(){
-      // reset tries zodat we weer even actief proberen
       tries = 0;
       buildTableIfReady();
       setTimeout(tick, 50);
@@ -272,7 +280,6 @@
 
     function fire(){
       tries = 0;
-      // Bij SPA route change kan UL later komen → observer opnieuw proberen te starten
       setTimeout(function(){
         startUlObserver();
         tick();
@@ -298,10 +305,8 @@
     window.addEventListener('focus', fire);
   }
 
-  // Start
   hookHistory();
 
-  // probeer observer te starten zodra UL er is (en blijf proberen totdat hij er is)
   (function waitForUl(){
     if (startUlObserver(), getContainer()) return;
     setTimeout(waitForUl, 200);
