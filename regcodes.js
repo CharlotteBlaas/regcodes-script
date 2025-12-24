@@ -5,11 +5,12 @@
   window.__REGCODES_BOOTSTRAPPED = true;
 
   var INTERVAL = 250;
-  var MAX_TRIES = 240; // 240 * 250ms = 60s
+  var MAX_TRIES = 240; // 60s
   var tries = 0;
 
   var lastSig = null;
   var ulObserver = null;
+  var companyObserver = null;
   var historyHooked = false;
 
   function stripHtml(input){
@@ -21,24 +22,27 @@
     return stripHtml(raw).replace(/\u00A0/g,' ').replace(/\s+/g,' ').trim();
   }
 
-  function isPlaceholder(v){
+  function isPlaceholderCompany(v){
+    return String(v || '').trim() === '{User.CompanyName}';
+  }
+  function isPlaceholderReg(v){
     return String(v || '').indexOf('{User.Registratiecode') === 0;
   }
 
-  function isCompanyPlaceholder(v){
-    return String(v || '').indexOf('{User.CompanyName') === 0;
+  function getCompanyContainer(){
+    return document.getElementById('company-raw-data');
+  }
+
+  function getCompanyName(){
+    var el = getCompanyContainer();
+    if (!el) return '';
+    var txt = cleanRaw(el.textContent || '');
+    if (!txt || isPlaceholderCompany(txt)) return '';
+    return txt;
   }
 
   function getContainer(){
     return document.getElementById('registratie-raw-data');
-  }
-
-  function getCompanyName(){
-    var el = document.getElementById('company-raw-data');
-    if (!el) return '';
-    var val = cleanRaw(el.textContent || '');
-    if (!val || isCompanyPlaceholder(val)) return '';
-    return val;
   }
 
   function getRows(){
@@ -51,17 +55,17 @@
     return lis
       .map(function(li){ return cleanRaw(li.getAttribute('data-code') || li.textContent || ''); })
       .filter(Boolean)
-      .filter(function(v){ return !isPlaceholder(v); });
+      .filter(function(v){ return !isPlaceholderReg(v); });
   }
 
   function makeShareUrl(code){
     return 'https://mdw-hvdz.hartstichting.nl/nl/?unique_code=' + encodeURIComponent(code);
   }
 
-  function buildMailto(email, url, code){
-    var company = getCompanyName();
-
+  function buildMailto(email, url, code, companyName){
     var subject = 'Een extra voordeel voor jou: toegang tot de Hart voor de Zaak-voordeelshop';
+
+    var closing = companyName ? companyName : '[Naam werkgever / organisatie]';
 
     var body = [
       'Beste collega,',
@@ -75,14 +79,14 @@
       'Persoonlijke registratielink:',
       url,
       '',
-      'Code: ' + (code || ''),
+      'Code: ' + code,
       '',
       'Na registratie kun je direct ontdekken welke voordelen en tools voor jou beschikbaar zijn.',
       '',
       'We nodigen je van harte uit om hier gebruik van te maken. Zo investeren we samen, met de Hartstichting, in gezondheid – ook op de werkvloer.',
       '',
       'Met vriendelijke groet,',
-      company ? company : '[Naam werkgever / organisatie]'
+      closing
     ].join('\n');
 
     return 'mailto:' + encodeURIComponent(email || '') +
@@ -94,7 +98,9 @@
     return String(status || '').toLowerCase().indexOf('gebruikt') !== -1;
   }
 
-  function signature(rows){ return rows.join('||'); }
+  function signature(rows, companyName){
+    return (companyName || '') + '||' + rows.join('||');
+  }
 
   function copyIcon(){
     return (
@@ -155,7 +161,9 @@
     if (rows === null) return false;
     if (!rows.length) return false;
 
-    var sig = signature(rows);
+    var companyName = getCompanyName();
+    var sig = signature(rows, companyName);
+
     if (sig === lastSig && tbody.children.length) return true;
 
     tbody.innerHTML = '';
@@ -197,7 +205,7 @@
         copyBtn.disabled = true;
         copyBtn.classList.add('is-disabled');
       } else {
-        mailBtn.href = buildMailto(email, url, code);
+        mailBtn.href = buildMailto(email, url, code, companyName);
         mailBtn.title = 'Mail openen';
       }
 
@@ -219,7 +227,7 @@
       tdS.textContent = status;
       tr.appendChild(tdS);
 
-      // Medewerker (email-link)
+      // Medewerker
       var tdE = document.createElement('td');
       if (email) {
         var a = document.createElement('a');
@@ -264,6 +272,25 @@
     });
   }
 
+  function startCompanyObserver(){
+    if (companyObserver) return;
+
+    var el = getCompanyContainer();
+    if (!el) return;
+
+    companyObserver = new MutationObserver(function(){
+      tries = 0;
+      buildTableIfReady();
+      setTimeout(tick, 50);
+    });
+
+    companyObserver.observe(el, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
+  }
+
   function hookHistory(){
     if (historyHooked) return;
     historyHooked = true;
@@ -272,6 +299,7 @@
       tries = 0;
       setTimeout(function(){
         startUlObserver();
+        startCompanyObserver();
         tick();
       }, 50);
     }
@@ -298,10 +326,11 @@
   // Start
   hookHistory();
 
-  (function waitForUl(){
+  (function waitForStuff(){
     startUlObserver();
-    if (getContainer()) return;
-    setTimeout(waitForUl, 200);
+    startCompanyObserver();
+    if (getContainer() && getCompanyContainer()) return;
+    setTimeout(waitForStuff, 200);
   })();
 
   tick();
