@@ -10,11 +10,10 @@
 
   var lastSig = null;
   var ulObserver = null;
+  var companyObserver = null;
   var historyHooked = false;
 
-  // Bedrijfsnaam placeholder (wordt door jullie systeem gevuld)
-  var COMPANY_NAME = '{User.CompanyName}';
-
+  // ========== Helpers ==========
   function stripHtml(input){
     var div = document.createElement('div');
     div.innerHTML = String(input || '');
@@ -22,18 +21,31 @@
   }
 
   function cleanRaw(raw){
-    return stripHtml(raw)
-      .replace(/\u00A0/g,' ')
-      .replace(/\s+/g,' ')
-      .trim();
+    return stripHtml(raw).replace(/\u00A0/g,' ').replace(/\s+/g,' ').trim();
   }
 
   function isPlaceholder(v){
     return String(v || '').indexOf('{User.Registratiecode') === 0;
   }
 
+  function isCompanyPlaceholder(v){
+    return String(v || '').indexOf('{User.CompanyName') === 0;
+  }
+
   function getContainer(){
     return document.getElementById('registratie-raw-data');
+  }
+
+  function getCompanyEl(){
+    return document.getElementById('company-raw-data');
+  }
+
+  function getCompanyName(){
+    var el = getCompanyEl();
+    if (!el) return '';
+    var v = cleanRaw(el.textContent || '');
+    if (!v || isCompanyPlaceholder(v)) return '';
+    return v;
   }
 
   function getRows(){
@@ -44,29 +56,21 @@
     if (!lis.length) return [];
 
     return lis
-      .map(function(li){
-        return cleanRaw(li.getAttribute('data-code') || li.textContent || '');
-      })
+      .map(function(li){ return cleanRaw(li.getAttribute('data-code') || li.textContent || ''); })
       .filter(Boolean)
-      .filter(function(v){
-        return !isPlaceholder(v);
-      });
+      .filter(function(v){ return !isPlaceholder(v); });
   }
 
   function makeShareUrl(code){
+    // Link houden zoals nu (met unique_code)
     return 'https://mdw-hvdz.hartstichting.nl/nl/?unique_code=' + encodeURIComponent(code);
-  }
-
-  function getCompanyName(){
-    var name = cleanRaw(COMPANY_NAME);
-    if (!name || name.indexOf('{User.CompanyName') === 0) {
-      return '[Naam werkgever / organisatie]';
-    }
-    return name;
   }
 
   function buildMailto(email, url, code){
     var subject = 'Een extra voordeel voor jou: toegang tot de Hart voor de Zaak-voordeelshop';
+
+    var company = getCompanyName();
+    var signatureLine = company ? company : '[Naam werkgever / organisatie]';
 
     var body = [
       'Beste collega,',
@@ -87,23 +91,19 @@
       'We nodigen je van harte uit om hier gebruik van te maken. Zo investeren we samen, met de Hartstichting, in gezondheid – ook op de werkvloer.',
       '',
       'Met vriendelijke groet,',
-      getCompanyName()
+      signatureLine
     ].join('\n');
 
-    return (
-      'mailto:' + encodeURIComponent(email || '') +
+    return 'mailto:' + encodeURIComponent(email || '') +
       '?subject=' + encodeURIComponent(subject) +
-      '&body=' + encodeURIComponent(body)
-    );
+      '&body=' + encodeURIComponent(body);
   }
 
   function isUsed(status){
     return String(status || '').toLowerCase().indexOf('gebruikt') !== -1;
   }
 
-  function signature(rows){
-    return rows.join('||');
-  }
+  function signature(rows){ return rows.join('||'); }
 
   function copyIcon(){
     return (
@@ -162,8 +162,8 @@
     if (!tbody) return false;
 
     var rows = getRows();
-    if (rows === null) return false;
-    if (!rows.length) return false;
+    if (rows === null) return false; // container nog niet aanwezig
+    if (!rows.length) return false;  // data nog niet gevuld (placeholders)
 
     var sig = signature(rows);
     if (sig === lastSig && tbody.children.length) return true;
@@ -229,7 +229,7 @@
       tdS.textContent = status;
       tr.appendChild(tdS);
 
-      // Medewerker
+      // Medewerker (email-link)
       var tdE = document.createElement('td');
       if (email) {
         var a = document.createElement('a');
@@ -254,6 +254,7 @@
     if (tries < MAX_TRIES) setTimeout(tick, INTERVAL);
   }
 
+  // Observeer specifiek de UL zodat we rebuilden zodra user-data erin “plopt”
   function startUlObserver(){
     if (ulObserver) return;
 
@@ -274,6 +275,28 @@
     });
   }
 
+  // Observeer company placeholder zodat signature kan “meeveranderen”
+  function startCompanyObserver(){
+    if (companyObserver) return;
+
+    var el = getCompanyEl();
+    if (!el) return;
+
+    companyObserver = new MutationObserver(function(){
+      // Als company later gevuld wordt: rebuild table zodat mailto’s de nieuwe signature krijgen
+      tries = 0;
+      buildTableIfReady();
+      setTimeout(tick, 50);
+    });
+
+    companyObserver.observe(el, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true
+    });
+  }
+
   function hookHistory(){
     if (historyHooked) return;
     historyHooked = true;
@@ -282,6 +305,7 @@
       tries = 0;
       setTimeout(function(){
         startUlObserver();
+        startCompanyObserver();
         tick();
       }, 50);
     }
@@ -305,11 +329,19 @@
     window.addEventListener('focus', fire);
   }
 
+  // Start
   hookHistory();
 
-  (function waitForUl(){
-    if (startUlObserver(), getContainer()) return;
-    setTimeout(waitForUl, 200);
+  // Blijf proberen totdat UL en company element er zijn
+  (function waitForDomBits(){
+    var hasUl = !!getContainer();
+    var hasCompany = !!getCompanyEl();
+
+    if (hasUl) startUlObserver();
+    if (hasCompany) startCompanyObserver();
+
+    if (hasUl && hasCompany) return;
+    setTimeout(waitForDomBits, 200);
   })();
 
   tick();
