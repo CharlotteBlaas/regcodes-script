@@ -1,15 +1,18 @@
 (function () {
   'use strict';
 
+  // Mag 1x geladen worden, maar moet wél opnieuw kunnen "aanhaken" na SPA navigatie
   if (window.__REGCODES_BOOTSTRAPPED) return;
   window.__REGCODES_BOOTSTRAPPED = true;
 
   var INTERVAL = 250;
-  var MAX_TRIES = 240; // 60s
+  var MAX_TRIES = 240;
   var tries = 0;
 
   var lastSig = null;
   var ulObserver = null;
+  var bodyObserver = null;
+  var observedContainer = null;
   var historyHooked = false;
 
   function stripHtml(input){
@@ -22,27 +25,13 @@
   }
 
   function isPlaceholder(v){
-    v = String(v || '');
-    return (
-      v.indexOf('{User.Registratiecode') === 0 ||
-      v.indexOf('{User.CompanyName') === 0
-    );
+    // Pas dit aan als jouw platform andere placeholders gebruikt
+    return String(v || '').indexOf('{User.Registratiecode') === 0 ||
+           String(v || '').indexOf('{User.CompanyName') === 0;
   }
 
   function getContainer(){
     return document.getElementById('registratie-raw-data');
-  }
-
-  function getCompanyNode(){
-    return document.getElementById('company-raw-data');
-  }
-
-  function getCompanyName(){
-    var node = getCompanyNode();
-    if (!node) return '';
-    var v = cleanRaw(node.getAttribute('data-company') || node.textContent || '');
-    if (!v || isPlaceholder(v)) return '';
-    return v;
   }
 
   function getRows(){
@@ -65,20 +54,23 @@
   function buildMailto(email, url, code, companyName){
     var subject = 'Een extra voordeel voor jou: toegang tot de Hart voor de Zaak-voordeelshop';
 
-    var org = companyName || 'jouw organisatie';
+    // companyName is optioneel; als leeg laten we ‘m weg
+    var orgLine = companyName
+      ? ('Wij doen als organisatie (' + companyName + ') mee aan Hart voor de Zaak, het zakelijke partnerprogramma van de Hartstichting.')
+      : 'Wij doen als organisatie mee aan Hart voor de Zaak, het zakelijke partnerprogramma van de Hartstichting.';
 
     var body = [
       'Beste collega,',
       '',
-      'Wij doen als organisatie mee aan Hart voor de Zaak, het zakelijke partnerprogramma van de Hartstichting. Daarmee dragen we bij aan een hartgezonde samenleving – en daar profiteer jij als medewerker ook van.',
+      orgLine,
+      'Daarmee dragen we bij aan een hartgezonde samenleving – en daar profiteer jij als medewerker ook van.',
       '',
-      'Als medewerker krijg je toegang tot de Hart voor de Zaak-voordeelshop. In deze shop vind je mooie deals op allerlei producten en uitjes, speciaal voor medewerkers van Hart voor de Zaak-partners. Daarnaast krijg je toegang tot digitale tools uit het Hartstichting Vitaliteitspakket. Deze tools helpen je om je hart beter te leren kennen en ondersteunen je om goed voor je hart te zorgen, op een manier die bij jou past.',
+      'Als medewerker krijg je toegang tot de Hart voor de Zaak-voordeelshop. In deze shop vind je mooie deals op allerlei producten en uitjes, speciaal voor medewerkers van Hart voor de Zaak-partners.',
+      'Daarnaast krijg je toegang tot digitale tools uit het Hartstichting Vitaliteitspakket. Deze tools helpen je om je hart beter te leren kennen en ondersteunen je om goed voor je hart te zorgen, op een manier die bij jou past.',
       '',
-      'Via onderstaande persoonlijke link kun je je eenvoudig registreren. Je hebt daarvoor alleen de code nodig die hieronder staat.',
+      'Via onderstaande link kun je je eenvoudig registreren. Je hebt daarvoor alleen de code nodig die hieronder staat.',
       '',
-      'Persoonlijke registratielink:',
-      url,
-      '',
+      'Link: ' + url,
       'Code: ' + code,
       '',
       'Na registratie kun je direct ontdekken welke voordelen en tools voor jou beschikbaar zijn.',
@@ -86,7 +78,7 @@
       'We nodigen je van harte uit om hier gebruik van te maken. Zo investeren we samen, met de Hartstichting, in gezondheid – ook op de werkvloer.',
       '',
       'Met vriendelijke groet,',
-      org
+      (companyName || '[Naam werkgever / organisatie]')
     ].join('\n');
 
     return 'mailto:' + encodeURIComponent(email || '') +
@@ -151,6 +143,16 @@
     tbody.dataset.copyHandlerAttached = '1';
   }
 
+  // Optioneel: pak bedrijfsnaam uit een hidden element als je dat later toevoegt in HTML
+  // <span id="company-raw" style="display:none;">{User.CompanyName}</span>
+  function getCompanyName(){
+    var el = document.getElementById('company-raw');
+    if (!el) return '';
+    var v = cleanRaw(el.textContent || '');
+    if (!v || String(v).indexOf('{User.CompanyName') === 0) return '';
+    return v;
+  }
+
   function buildTableIfReady(){
     var tbody = document.querySelector('#registratie-tabel tbody');
     if (!tbody) return false;
@@ -164,7 +166,6 @@
 
     tbody.innerHTML = '';
 
-    // company kan later pas gevuld worden -> altijd opnieuw ophalen op klik / op render
     var companyName = getCompanyName();
 
     rows.forEach(function(raw){
@@ -204,7 +205,6 @@
         copyBtn.disabled = true;
         copyBtn.classList.add('is-disabled');
       } else {
-        // mailto opbouwen met (actuele) companyName
         mailBtn.href = buildMailto(email, url, code, companyName);
         mailBtn.title = 'Mail openen';
       }
@@ -252,48 +252,63 @@
     if (tries < MAX_TRIES) setTimeout(tick, INTERVAL);
   }
 
+  // Belangrijk: observer moet opnieuw koppelen als de container vervangen is
   function startUlObserver(){
-    if (ulObserver) return;
-
     var container = getContainer();
     if (!container) return;
 
-    ulObserver = new MutationObserver(function(){
-      tries = 0;
-      buildTableIfReady();
-      setTimeout(tick, 50);
-    });
+    // Als SPA de DOM heeft vervangen, hangt je oude observer aan een oud element
+    if (observedContainer !== container) {
+      if (ulObserver) ulObserver.disconnect();
+      observedContainer = container;
 
-    ulObserver.observe(container, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-      attributes: true
-    });
+      ulObserver = new MutationObserver(function(){
+        tries = 0;
+        buildTableIfReady();
+        setTimeout(tick, 50);
+      });
 
-    // ook company node observeren (als die later gevuld wordt)
-    var companyNode = getCompanyNode();
-    if (companyNode) {
-      try {
-        new MutationObserver(function(){
-          tries = 0;
-          buildTableIfReady();
-        }).observe(companyNode, { childList:true, subtree:true, characterData:true, attributes:true });
-      } catch(e) {}
+      ulObserver.observe(container, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+        attributes: true
+      });
     }
+  }
+
+  // Observeer ook de BODY: als SPA de hele sectie injecteert, pikken we dat op
+  function startBodyObserver(){
+    if (bodyObserver) return;
+
+    bodyObserver = new MutationObserver(function(){
+      // zodra tabel/ul verschijnt: aanhaken en bouwen
+      if (document.getElementById('registratie-tabel') || getContainer()) {
+        tries = 0;
+        startUlObserver();
+        tick();
+      }
+    });
+
+    bodyObserver.observe(document.documentElement || document.body, {
+      childList: true,
+      subtree: true
+    });
+  }
+
+  function fire(){
+    tries = 0;
+    lastSig = null;
+    // even wachten tot SPA content echt in de DOM staat
+    setTimeout(function(){
+      startUlObserver();
+      tick();
+    }, 50);
   }
 
   function hookHistory(){
     if (historyHooked) return;
     historyHooked = true;
-
-    function fire(){
-      tries = 0;
-      setTimeout(function(){
-        startUlObserver();
-        tick();
-      }, 50);
-    }
 
     var push = history.pushState;
     history.pushState = function(){
@@ -310,18 +325,15 @@
     };
 
     window.addEventListener('popstate', fire);
+    window.addEventListener('hashchange', fire);
     window.addEventListener('pageshow', fire);
-    window.addEventListener('focus', fire);
   }
 
+  // Start
   hookHistory();
+  startBodyObserver();
 
-  (function waitForUl(){
-    startUlObserver();
-    if (getContainer()) return;
-    setTimeout(waitForUl, 200);
-  })();
-
-  tick();
+  // initial run (voor echte page loads)
+  fire();
 
 })();
