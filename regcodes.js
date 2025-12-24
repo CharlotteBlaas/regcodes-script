@@ -12,6 +12,9 @@
   var ulObserver = null;
   var historyHooked = false;
 
+  // Placeholder uit jullie omgeving:
+  var COMPANY_NAME = '{User.CompanyName}';
+
   function stripHtml(input){
     var div = document.createElement('div');
     div.innerHTML = String(input || '');
@@ -46,21 +49,44 @@
     return 'https://mdw-hvdz.hartstichting.nl/nl/?unique_code=' + encodeURIComponent(code);
   }
 
-  function buildMailto(email, url){
-    var subject = 'Uitnodiging Hartstichting Voordeelplatform';
+  function buildMailto(email, url, code){
+    var subject = 'Een extra voordeel voor jou: toegang tot de Hart voor de Zaak-voordeelshop';
+
+    // “Unique code wel meegeven maar niet zichtbaar”: we tonen een klikbare tekst, niet de URL zelf.
+    // In de href zit de unieke link wél.
+    var linkText = 'Klik hier om je te registreren';
+    var htmlLink = '<a href="' + url + '">' + linkText + '</a>';
+
+    // Bedrijfsnaam: als placeholder niet gevuld is, houden we het neutraal.
+    var company = cleanRaw(COMPANY_NAME);
+    var hasCompany = company && company.indexOf('{User.CompanyName') !== 0;
+
     var body = [
       'Beste collega,',
       '',
-      'Je bent uitgenodigd voor het Hartstichting Voordeelplatform.',
+      'Wij doen als organisatie mee aan Hart voor de Zaak, het zakelijke partnerprogramma van de Hartstichting. Daarmee dragen we bij aan een hartgezonde samenleving – en daar profiteer jij als medewerker ook van.',
       '',
-      'Gebruik onderstaande persoonlijke link:',
-      url,
+      'Als medewerker krijg je toegang tot de Hart voor de Zaak-voordeelshop. In deze shop vind je mooie deals op allerlei producten en uitjes, speciaal voor medewerkers van Hart voor de Zaak-partners. Daarnaast krijg je toegang tot digitale tools uit het Hartstichting Vitaliteitspakket. Deze tools helpen je om je hart beter te leren kennen en ondersteunen je om goed voor je hart te zorgen, op een manier die bij jou past.',
       '',
-      'Met vriendelijke groet,'
+      'Via onderstaande link kun je je eenvoudig registreren. Je hebt daarvoor alleen de code nodig die hieronder staat.',
+      '',
+      // Klikbare tekst (url zit in href)
+      htmlLink,
+      '',
+      'Code: ' + code,
+      '',
+      'Na registratie kun je direct ontdekken welke voordelen en tools voor jou beschikbaar zijn.',
+      '',
+      'We nodigen je van harte uit om hier gebruik van te maken. Zo investeren we samen, met de Hartstichting, in gezondheid – ook op de werkvloer.',
+      '',
+      'Met vriendelijke groet,',
+      hasCompany ? company : '[Naam werkgever / organisatie]'
     ].join('\n');
 
     return 'mailto:' + encodeURIComponent(email || '') +
       '?subject=' + encodeURIComponent(subject) +
+      // Let op: mail clients ondersteunen HTML in body niet altijd. Veel Outlook varianten tonen dit wél als HTML-achtige tekst.
+      // Toch is dit de beste manier om de link “niet zichtbaar” te maken maar wel klikbaar in clients die het ondersteunen.
       '&body=' + encodeURIComponent(body);
   }
 
@@ -171,7 +197,7 @@
         copyBtn.disabled = true;
         copyBtn.classList.add('is-disabled');
       } else {
-        mailBtn.href = buildMailto(email, url);
+        mailBtn.href = buildMailto(email, url, code);
         mailBtn.title = 'Mail openen';
       }
 
