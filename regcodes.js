@@ -5,7 +5,7 @@
   window.__REGCODES_BOOTSTRAPPED = true;
 
   var INTERVAL = 250;
-  var MAX_TRIES = 240; // 60s
+  var MAX_TRIES = 240; // 60 seconden
   var tries = 0;
 
   var lastSig = null;
@@ -18,13 +18,18 @@
     div.innerHTML = String(input || '');
     return (div.textContent || div.innerText || '').trim();
   }
+
   function cleanRaw(raw){
-    return stripHtml(raw).replace(/\u00A0/g,' ').replace(/\s+/g,' ').trim();
+    return stripHtml(raw)
+      .replace(/\u00A0/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   function isPlaceholderCompany(v){
     return String(v || '').trim() === '{User.CompanyName}';
   }
+
   function isPlaceholderReg(v){
     return String(v || '').indexOf('{User.Registratiecode') === 0;
   }
@@ -35,9 +40,13 @@
 
   function getCompanyName(){
     var el = getCompanyContainer();
+
     if (!el) return '';
+
     var txt = cleanRaw(el.textContent || '');
+
     if (!txt || isPlaceholderCompany(txt)) return '';
+
     return txt;
   }
 
@@ -47,45 +56,69 @@
 
   function getRows(){
     var container = getContainer();
+
     if (!container) return null;
 
     var lis = Array.from(container.querySelectorAll('li'));
+
     if (!lis.length) return [];
 
     return lis
-      .map(function(li){ return cleanRaw(li.getAttribute('data-code') || li.textContent || ''); })
+      .map(function(li){
+        return cleanRaw(
+          li.getAttribute('data-code') ||
+          li.textContent ||
+          ''
+        );
+      })
       .filter(Boolean)
-      .filter(function(v){ return !isPlaceholderReg(v); });
+      .filter(function(v){
+        return !isPlaceholderReg(v);
+      });
   }
 
   function makeShareUrl(code){
-    return 'https://mdw-hvdz.hartstichting.nl/nl/?unique_code=' + encodeURIComponent(code);
+    return 'https://mdw-hvdz.hartstichting.nl/nl/?unique_code=' +
+      encodeURIComponent(code);
   }
 
   function buildMailto(email, url, code, companyName){
-    var subject = 'Een extra voordeel voor jou: toegang tot de Hart voor de Zaak-voordeelshop';
+    var subject =
+      'Een extra voordeel voor jou: toegang tot de Hart voor de Zaak-voordeelshop';
 
-    var closing = companyName ? companyName : '[Naam werkgever / organisatie]';
+    var closing = companyName
+      ? companyName
+      : '[Naam werkgever / organisatie]';
 
     var body = [
       'Beste collega,',
       '',
-      'Wij doen als organisatie mee aan Hart voor de Zaak, het zakelijke partnerprogramma van de Hartstichting. Daarmee dragen we bij aan een hartgezonde samenleving – en daar profiteer jij als medewerker ook van.',
+      'Als Hart voor de Zaak partner steunen wij het belangrijke werk van de Hartstichting én besteden we aandacht aan de hartgezondheid en vitaliteit binnen onze eigen organisatie. Daar profiteer jij als medewerker ook van: je krijgt gratis toegang tot verschillende voordelen en praktische tools van de Hartstichting.',
       '',
-      'Als medewerker krijg je toegang tot de Hart voor de Zaak-voordeelshop. In deze shop vind je mooie deals op allerlei producten en uitjes, speciaal voor medewerkers van Hart voor de Zaak-partners. Daarnaast krijg je toegang tot digitale tools uit het Hartstichting Vitaliteitspakket. Deze tools helpen je om je hart beter te leren kennen en ondersteunen je om goed voor je hart te zorgen, op een manier die bij jou past.',
+      'Speciaal voor jou krijg je gratis toegang tot:',
       '',
-      'Via onderstaande persoonlijke link kun je je eenvoudig registreren. Je hebt daarvoor alleen de code nodig die hieronder staat.',
+      '• De Hart voor de Zaak Voordeelshop – profiteer van aantrekkelijke aanbiedingen op allerlei producten en leuke uitjes.',
       '',
-      'Persoonlijke registratielink:',
+      '• Het Hartstichting Vitaliteitspakket – ontdek praktische informatie en tools om goed voor je hart te zorgen. Van een receptenboekje en wandelmagazine tot een beweegprogramma en kennis over gezonder eten.',
+      '',
+      'Zo is er altijd wel iets dat bij jou past: een leuk voordeel óf inspiratie om met je gezondheid aan de slag te gaan.',
+      '',
+      'Meld je gratis aan',
+      '',
+      'Registreren is eenvoudig. Klik op onderstaande link en gebruik de unieke registratiecode.',
+      '',
+      'Registratielink:',
       url,
       '',
-      'Code: ' + code,
+      'Registratiecode:',
+      code,
       '',
-      'Na registratie kun je direct ontdekken welke voordelen en tools voor jou beschikbaar zijn.',
+      'Na registratie heb je direct toegang tot de Voordeelshop en het Vitaliteitspakket.',
       '',
-      'We nodigen je van harte uit om hier gebruik van te maken. Zo investeren we samen, met de Hartstichting, in gezondheid – ook op de werkvloer.',
+      'Veel plezier met ontdekken!',
       '',
-      'Met vriendelijke groet,',
+      'Met hartelijke groet,',
+      '',
       closing
     ].join('\n');
 
@@ -95,7 +128,9 @@
   }
 
   function isUsed(status){
-    return String(status || '').toLowerCase().indexOf('gebruikt') !== -1;
+    return String(status || '')
+      .toLowerCase()
+      .indexOf('gebruikt') !== -1;
   }
 
   function signature(rows, companyName){
@@ -110,6 +145,7 @@
       '</svg>'
     );
   }
+
   function mailIcon(){
     return (
       '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
@@ -124,27 +160,41 @@
 
     tbody.addEventListener('click', function(e){
       var btn = e.target.closest('.hvdz-copy-btn');
+
       if (!btn || btn.disabled) return;
 
       var link = btn.getAttribute('data-link');
+
       if (!link) return;
 
       function done(){
         var old = btn.title || '';
+
         btn.title = 'Gekopieerd!';
-        setTimeout(function(){ btn.title = old; }, 900);
+
+        setTimeout(function(){
+          btn.title = old;
+        }, 900);
       }
 
       if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(link).then(done).catch(done);
+        navigator.clipboard.writeText(link)
+          .then(done)
+          .catch(done);
       } else {
         var t = document.createElement('textarea');
+
         t.value = link;
         t.style.position = 'fixed';
         t.style.opacity = '0';
+
         document.body.appendChild(t);
         t.select();
-        try { document.execCommand('copy'); } catch(e2) {}
+
+        try {
+          document.execCommand('copy');
+        } catch(e2) {}
+
         document.body.removeChild(t);
         done();
       }
@@ -155,9 +205,11 @@
 
   function buildTableIfReady(){
     var tbody = document.querySelector('#registratie-tabel tbody');
+
     if (!tbody) return false;
 
     var rows = getRows();
+
     if (rows === null) return false;
     if (!rows.length) return false;
 
@@ -169,8 +221,13 @@
     tbody.innerHTML = '';
 
     rows.forEach(function(raw){
-      var parts = raw.split(';').map(function(p){ return cleanRaw(p || ''); });
-      while (parts.length < 3) parts.push('');
+      var parts = raw.split(';').map(function(p){
+        return cleanRaw(p || '');
+      });
+
+      while (parts.length < 3) {
+        parts.push('');
+      }
 
       var code = cleanRaw(parts[0]);
       var status = cleanRaw(parts[1] || 'Beschikbaar');
@@ -186,13 +243,16 @@
       // Acties
       var tdA = document.createElement('td');
       var actions = document.createElement('div');
+
       actions.className = 'hs-actions';
 
       var mailBtn = document.createElement('a');
+
       mailBtn.className = 'hs-icon-btn';
       mailBtn.innerHTML = mailIcon();
 
       var copyBtn = document.createElement('button');
+
       copyBtn.type = 'button';
       copyBtn.className = 'hs-icon-btn hvdz-copy-btn';
       copyBtn.setAttribute('data-link', url);
@@ -202,10 +262,17 @@
       if (used) {
         mailBtn.classList.add('is-disabled');
         mailBtn.title = 'Code is gebruikt';
+
         copyBtn.disabled = true;
         copyBtn.classList.add('is-disabled');
       } else {
-        mailBtn.href = buildMailto(email, url, code, companyName);
+        mailBtn.href = buildMailto(
+          email,
+          url,
+          code,
+          companyName
+        );
+
         mailBtn.title = 'Mail openen';
       }
 
@@ -217,49 +284,63 @@
       // Code
       var tdC = document.createElement('td');
       var codeSpan = document.createElement('span');
+
       codeSpan.className = 'hvdz-code';
       codeSpan.textContent = code;
+
       tdC.appendChild(codeSpan);
       tr.appendChild(tdC);
 
       // Status
       var tdS = document.createElement('td');
+
       tdS.textContent = status;
       tr.appendChild(tdS);
 
       // Medewerker
       var tdE = document.createElement('td');
+
       if (email) {
         var a = document.createElement('a');
+
         a.href = 'mailto:' + encodeURIComponent(email);
         a.className = 'hs-email';
         a.textContent = email;
+
         tdE.appendChild(a);
       }
-      tr.appendChild(tdE);
 
+      tr.appendChild(tdE);
       tbody.appendChild(tr);
     });
 
     ensureCopyHandler(tbody);
+
     lastSig = sig;
+
     return true;
   }
 
   function tick(){
     tries++;
+
     if (buildTableIfReady()) return;
-    if (tries < MAX_TRIES) setTimeout(tick, INTERVAL);
+
+    if (tries < MAX_TRIES) {
+      setTimeout(tick, INTERVAL);
+    }
   }
 
   function startUlObserver(){
     if (ulObserver) return;
 
     var container = getContainer();
+
     if (!container) return;
 
     ulObserver = new MutationObserver(function(){
       tries = 0;
+
       buildTableIfReady();
       setTimeout(tick, 50);
     });
@@ -276,10 +357,12 @@
     if (companyObserver) return;
 
     var el = getCompanyContainer();
+
     if (!el) return;
 
     companyObserver = new MutationObserver(function(){
       tries = 0;
+
       buildTableIfReady();
       setTimeout(tick, 50);
     });
@@ -293,10 +376,12 @@
 
   function hookHistory(){
     if (historyHooked) return;
+
     historyHooked = true;
 
     function fire(){
       tries = 0;
+
       setTimeout(function(){
         startUlObserver();
         startCompanyObserver();
@@ -305,16 +390,22 @@
     }
 
     var push = history.pushState;
+
     history.pushState = function(){
       var r = push.apply(this, arguments);
+
       fire();
+
       return r;
     };
 
     var replace = history.replaceState;
+
     history.replaceState = function(){
       var r = replace.apply(this, arguments);
+
       fire();
+
       return r;
     };
 
@@ -329,7 +420,9 @@
   (function waitForStuff(){
     startUlObserver();
     startCompanyObserver();
+
     if (getContainer() && getCompanyContainer()) return;
+
     setTimeout(waitForStuff, 200);
   })();
 
